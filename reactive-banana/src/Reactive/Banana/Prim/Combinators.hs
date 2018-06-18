@@ -60,17 +60,17 @@ unsafeMapIOP f p1 = do
 
 unionWithP :: forall a. (a -> a -> a) -> Pulse a -> Pulse a -> Build (Pulse a)
 unionWithP f px py = do
-        p <- newPulse "unionWithP" $
-            {-# SCC unionWithP #-} eval <$> readPulseP px <*> readPulseP py
-        p `dependOn` px
-        p `dependOn` py
-        return p
-    where
-    eval :: Maybe a -> Maybe a -> Maybe a
-    eval (Just x) (Just y) = Just (f x y)
-    eval (Just x) Nothing  = Just x
-    eval Nothing  (Just y) = Just y
-    eval Nothing  Nothing  = Nothing
+  p <- newPulse "unionWithP" $
+      {-# SCC unionWithP #-} eval <$> readPulseP px <*> readPulseP py
+  p `dependOn` px
+  p `dependOn` py
+  return p
+ where
+  eval :: Maybe a -> Maybe a -> Maybe a
+  eval (Just x) (Just y) = Just (f x y)
+  eval (Just x) Nothing  = Just x
+  eval Nothing  (Just y) = Just y
+  eval Nothing  Nothing  = Nothing
 
 -- See note [LatchRecursion]
 applyP :: Latch (a -> b) -> Pulse a -> Build (Pulse b)
@@ -85,18 +85,18 @@ pureL = Reactive.Banana.Prim.Plumbing.pureL
 
 -- specialization of   mapL f = applyL (pureL f)
 mapL :: (a -> b) -> Latch a -> Latch b
-mapL f lx = cachedLatch $ {-# SCC mapL #-} f <$> getValueL lx
+mapL f lx = cachedLatch (f <$> getValueL lx)
 
 applyL :: Latch (a -> b) -> Latch a -> Latch b
 applyL lf lx = cachedLatch $
     {-# SCC applyL #-} getValueL lf <*> getValueL lx
 
-accumL :: a -> Pulse (a -> a) -> Build (Latch a, Pulse a)
+accumL :: forall a. a -> Pulse (a -> a) -> Build (Latch a, Pulse a)
 accumL a p1 = do
-    (updateOn, x) <- newLatch a
-    p2 <- applyP (mapL (\x f -> f x) x) p1
+    (updateOn :: Pulse a -> Build (), x :: Latch a) <- newLatch a
+    p2 :: Pulse a <- applyP (mapL (\x f -> f x) x) p1
     updateOn p2
-    return (x,p2)
+    return (x, p2)
 
 -- specialization of accumL
 stepperL :: a -> Pulse a -> Build (Latch a)

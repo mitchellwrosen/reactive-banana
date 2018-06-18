@@ -31,17 +31,20 @@ runCached (Cached x) = x
 -- only the generated value will be returned.
 {-# NOINLINE cache #-}
 cache :: (MonadFix m, MonadIO m) => m a -> Cached m a
-cache m = unsafePerformIO $ do
-    key <- liftIO $ newIORef Nothing
-    return $ Cached $ do
-        ma <- liftIO $ readIORef key    -- read the cached result
-        case ma of
-            Just a  -> return a         -- return the cached result.
-            Nothing -> mdo
-                liftIO $                -- write the result already
-                    writeIORef key (Just a)
-                a <- m                  -- evaluate
-                return a
+cache = unsafePerformIO . cacheIO
+
+cacheIO :: (MonadFix m, MonadIO m) => m a -> IO (Cached m a)
+cacheIO m = do
+  key <- newIORef Nothing
+  return $ Cached $ do
+    ma <- liftIO $ readIORef key    -- read the cached result
+    case ma of
+      Just a  -> return a         -- return the cached result.
+      Nothing -> mdo
+        liftIO $                -- write the result already
+          writeIORef key (Just a)
+        a <- m                  -- evaluate
+        return a
 
 -- | Return a pure value. Doesn't make use of the cache.
 fromPure :: Monad m => a -> Cached m a

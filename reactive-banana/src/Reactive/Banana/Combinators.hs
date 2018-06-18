@@ -245,7 +245,7 @@ valueB = liftMoment . M . Prim.valueB . unB
 -- It can be used safely with most combinators like 'stepper'.
 -- If that doesn't work for you, please use 'valueB' instead.
 valueBLater :: MonadMoment m => Behavior a -> m a
-valueBLater = liftMoment . M . Prim.initialBLater . unB
+valueBLater = liftMoment . M . Prim.valueBLater . unB
 
 
 -- | Observe a value at those moments in time where
