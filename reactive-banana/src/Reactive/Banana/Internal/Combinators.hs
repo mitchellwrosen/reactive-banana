@@ -152,7 +152,8 @@ pureB :: a -> Behavior a
 pureB a =
   cache $ do
     p <- runCached never
-    pure (Prim.pureL a, p)
+    l <- Prim.pureL a
+    pure (l, p)
 
 applyB :: Behavior (a -> b) -> Behavior a -> Behavior b
 applyB bf bx =
@@ -161,7 +162,7 @@ applyB bf bx =
     ~(lx, cx) <- runCached bx
     lift $ do
       cy <- Prim.unionWithP const cf cx
-      let ly = Prim.applyL lf lx
+      ly <- Prim.applyL lf lx
       pure (ly, cy)
 
 mapB :: (a -> b) -> Behavior a -> Behavior b

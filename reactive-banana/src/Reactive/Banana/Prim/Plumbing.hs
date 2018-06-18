@@ -5,6 +5,7 @@
 module Reactive.Banana.Prim.Plumbing where
 
 import           Control.Monad                                (join)
+import           Control.Monad.Fix                            (MonadFix)
 import           Control.Monad.IO.Class
 import           Control.Monad.Trans.Class
 import qualified Control.Monad.Trans.RWSIO          as RWS
@@ -64,59 +65,61 @@ neverP = liftIO $ do
         }
 
 -- | Return a 'Latch' that has a constant value
-pureL :: a -> Latch a
-pureL a = unsafePerformIO $ newRef $ Latch
-    { _seenL  = beginning
-    , _valueL = a
-    , _evalL  = return a
-    }
+pureL :: MonadIO m => a -> m (Latch a)
+pureL a = newRef Latch
+  { _seenL  = beginning
+  , _valueL = a
+  , _evalL  = return a
+  }
 
 -- | Make new 'Latch' that can be updated by a 'Pulse'
 newLatch :: forall a. a -> Build (Pulse a -> Build (), Latch a)
 newLatch a = mdo
-    latch <- liftIO $ newRef $ Latch
-        { _seenL  = beginning
-        , _valueL = a
-        , _evalL  = do
-            Latch {..} <- readRef latch
-            RW.tell _seenL  -- indicate timestamp
-            return _valueL  -- indicate value
-        }
+    latch :: Latch a <- newRef Latch
+      { _seenL  = beginning
+      , _valueL = a
+      , _evalL  = do
+          Latch {..} <- readRef latch
+          RW.tell _seenL  -- indicate timestamp
+          return _valueL  -- indicate value
+      }
+
     let
         err        = error "incorrect Latch write"
 
         updateOn :: Pulse a -> Build ()
         updateOn p = do
-            w  <- liftIO $ mkWeakRefValue latch latch
-            lw <- liftIO $ newRef $ LatchWrite
+            w  <- mkWeakRefValue latch latch
+            lw <- newRef LatchWrite
                 { _evalLW  = maybe err id <$> readPulseP p
                 , _latchLW = w
                 }
             -- writer is alive only as long as the latch is alive
-            _  <- liftIO $ mkWeakRefValue latch lw
-            (P p) `addChild` (L lw)
+            _  <- mkWeakRefValue latch lw
+            P p `addChild` L lw
 
     return (updateOn, latch)
 
 -- | Make a new 'Latch' that caches a previous computation.
-cachedLatch :: EvalL a -> Latch a
-cachedLatch eval = unsafePerformIO $ mdo
-    latch <- newRef $ Latch
-        { _seenL  = agesAgo
-        , _valueL = error "Undefined value of a cached latch."
-        , _evalL  = do
-            Latch{..} <- liftIO $ readRef latch
-            -- calculate current value (lazy!) with timestamp
-            (a,time)  <- RW.listen eval
-            liftIO $ if time <= _seenL
-                then return _valueL     -- return old value
-                else do                 -- update value
-                    let _seenL  = time
-                    let _valueL = a
-                    a `seq` put latch (Latch {..})
-                    return a
-        }
-    return latch
+cachedLatch :: (MonadFix m, MonadIO m) => EvalL a -> m (Latch a)
+cachedLatch eval = mdo
+  latch <-
+    newRef Latch
+      { _seenL  = agesAgo
+      , _valueL = error "Undefined value of a cached latch."
+      , _evalL  = do
+          Latch{..} <- liftIO $ readRef latch
+          -- calculate current value (lazy!) with timestamp
+          (a,time)  <- RW.listen eval
+          liftIO $ if time <= _seenL
+              then return _valueL     -- return old value
+              else do                 -- update value
+                  let _seenL  = time
+                  let _valueL = a
+                  a `seq` put latch (Latch {..})
+                  return a
+      }
+  return latch
 
 -- | Add a new output that depends on a 'Pulse'.
 --

@@ -6,7 +6,9 @@ module Reactive.Banana.Prim.Combinators where
 
 import Control.Applicative
 import Control.Monad
+import Control.Monad.Fix
 import Control.Monad.IO.Class
+import Data.Function
 
 import Reactive.Banana.Prim.Plumbing
     ( neverP, newPulse, newLatch, cachedLatch
@@ -75,27 +77,37 @@ unionWithP f px py = do
 -- See note [LatchRecursion]
 applyP :: Latch (a -> b) -> Pulse a -> Build (Pulse b)
 applyP f x = do
-    p <- newPulse "applyP" $
-        {-# SCC applyP #-} fmap <$> readLatchP f <*> readPulseP x
-    p `dependOn` x
-    return p
+  p <- newPulse "applyP" $
+      {-# SCC applyP #-} fmap <$> readLatchP f <*> readPulseP x
+  p `dependOn` x
+  return p
 
-pureL :: a -> Latch a
-pureL = Reactive.Banana.Prim.Plumbing.pureL
+pureL :: MonadIO m => a -> m (Latch a)
+pureL =
+  Reactive.Banana.Prim.Plumbing.pureL
 
 -- specialization of   mapL f = applyL (pureL f)
-mapL :: (a -> b) -> Latch a -> Latch b
-mapL f lx = cachedLatch (f <$> getValueL lx)
+mapL :: (MonadFix m, MonadIO m) => (a -> b) -> Latch a -> m (Latch b)
+mapL f lx =
+  cachedLatch (f <$> getValueL lx)
 
-applyL :: Latch (a -> b) -> Latch a -> Latch b
-applyL lf lx = cachedLatch $
-    {-# SCC applyL #-} getValueL lf <*> getValueL lx
+applyL :: (MonadFix m, MonadIO m) => Latch (a -> b) -> Latch a -> m (Latch b)
+applyL lf lx =
+  cachedLatch (getValueL lf <*> getValueL lx)
 
 accumL :: forall a. a -> Pulse (a -> a) -> Build (Latch a, Pulse a)
 accumL a p1 = do
-    (updateOn :: Pulse a -> Build (), x :: Latch a) <- newLatch a
-    p2 :: Pulse a <- applyP (mapL (\x f -> f x) x) p1
+    (updateOn :: Pulse a -> Build (), x :: Latch a) <-
+      newLatch a
+
+    l :: Latch ((a -> a) -> a) <-
+      mapL (&) x
+
+    p2 :: Pulse a <-
+      applyP l p1
+
     updateOn p2
+
     return (x, p2)
 
 -- specialization of accumL
@@ -111,7 +123,7 @@ stepperL a p = do
 switchL :: Latch a -> Pulse (Latch a) -> Build (Latch a)
 switchL l pl = mdo
     x <- stepperL l pl
-    return $ cachedLatch $ getValueL x >>= getValueL
+    cachedLatch (getValueL x >>= getValueL)
 
 executeP :: forall a b. Pulse (b -> Build a) -> b -> Build (Pulse a)
 executeP p1 b = do
