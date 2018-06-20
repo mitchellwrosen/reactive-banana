@@ -42,9 +42,11 @@ emptyNetwork = Network
     }
 
 type Build  = ReaderWriterIOT BuildR BuildW IO
+
 type BuildR = (Time, Pulse ())
     -- ( current time
     -- , pulse that always fires)
+
 newtype BuildW = BuildW (DependencyBuilder, [Output], Action, Maybe (Build ()))
     -- reader : current timestamp
     -- writer : ( actions that change the network topology

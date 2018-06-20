@@ -11,9 +11,9 @@ import Control.Monad.IO.Class
 import Data.Function
 
 import Reactive.Banana.Prim.Plumbing
-    ( neverP, newPulse, newLatch, cachedLatch
+    ( neverP, newPulse, cachedLatch
     , dependOn, keepAlive, changeParent
-    , getValueL
+    , getValueL, stepperL
     , readPulseP, readLatchP, readLatchFutureP, liftBuildP,
     )
 import qualified Reactive.Banana.Prim.Plumbing (pureL)
@@ -96,26 +96,17 @@ applyL lf lx =
   cachedLatch (getValueL lf <*> getValueL lx)
 
 accumL :: forall a. a -> Pulse (a -> a) -> Build (Latch a, Pulse a)
-accumL a p1 = do
-    (updateOn :: Pulse a -> Build (), x :: Latch a) <-
-      newLatch a
+accumL a pf = mdo
+    l :: Latch a <-
+      stepperL a p
 
-    l :: Latch ((a -> a) -> a) <-
-      mapL (&) x
+    lf :: Latch ((a -> a) -> a) <-
+      mapL (&) l
 
-    p2 :: Pulse a <-
-      applyP l p1
+    p :: Pulse a <-
+      applyP lf pf
 
-    updateOn p2
-
-    return (x, p2)
-
--- specialization of accumL
-stepperL :: a -> Pulse a -> Build (Latch a)
-stepperL a p = do
-    (updateOn, x) <- newLatch a
-    updateOn p
-    return x
+    return (l, p)
 
 {-----------------------------------------------------------------------------
     Combinators - dynamic event switching

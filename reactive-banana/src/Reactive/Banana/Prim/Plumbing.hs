@@ -26,19 +26,20 @@ import           Reactive.Banana.Prim.Util
 {-----------------------------------------------------------------------------
     Build primitive pulses and latches
 ------------------------------------------------------------------------------}
+
 -- | Make 'Pulse' from evaluation function
-newPulse :: String -> EvalP (Maybe a) -> Build (Pulse a)
+newPulse :: MonadIO m => String -> EvalP (Maybe a) -> m (Pulse a)
 newPulse name eval = liftIO $ do
-    key <- Lazy.newKey
-    newRef $ Pulse
-        { _keyP      = key
-        , _seenP     = agesAgo
-        , _evalP     = eval
-        , _childrenP = []
-        , _parentsP  = []
-        , _levelP    = ground
-        , _nameP     = name
-        }
+  key <- Lazy.newKey
+  newRef Pulse
+      { _keyP      = key
+      , _seenP     = agesAgo
+      , _evalP     = eval
+      , _childrenP = []
+      , _parentsP  = []
+      , _levelP    = ground
+      , _nameP     = name
+      }
 
 {-
 * Note [PulseCreation]
@@ -51,18 +52,18 @@ this is a recipe for desaster.
 -}
 
 -- | 'Pulse' that never fires.
-neverP :: Build (Pulse a)
+neverP :: MonadIO m => m (Pulse a)
 neverP = liftIO $ do
-    key <- Lazy.newKey
-    newRef $ Pulse
-        { _keyP      = key
-        , _seenP     = agesAgo
-        , _evalP     = return Nothing
-        , _childrenP = []
-        , _parentsP  = []
-        , _levelP    = ground
-        , _nameP     = "neverP"
-        }
+  key <- Lazy.newKey
+  newRef Pulse
+    { _keyP      = key
+    , _seenP     = agesAgo
+    , _evalP     = return Nothing
+    , _childrenP = []
+    , _parentsP  = []
+    , _levelP    = ground
+    , _nameP     = "neverP"
+    }
 
 -- | Return a 'Latch' that has a constant value
 pureL :: MonadIO m => a -> m (Latch a)
@@ -73,9 +74,10 @@ pureL a = newRef Latch
   }
 
 -- | Make new 'Latch' that can be updated by a 'Pulse'
-newLatch :: forall a. a -> Build (Pulse a -> Build (), Latch a)
-newLatch a = mdo
-    latch :: Latch a <- newRef Latch
+stepperL :: forall a. a -> Pulse a -> Build (Latch a)
+stepperL a p = mdo
+  latch :: Latch a <-
+    newRef Latch
       { _seenL  = beginning
       , _valueL = a
       , _evalL  = do
@@ -84,21 +86,18 @@ newLatch a = mdo
           return _valueL  -- indicate value
       }
 
-    let
-        err        = error "incorrect Latch write"
+  let err = error "incorrect Latch write"
 
-        updateOn :: Pulse a -> Build ()
-        updateOn p = do
-            w  <- mkWeakRefValue latch latch
-            lw <- newRef LatchWrite
-                { _evalLW  = maybe err id <$> readPulseP p
-                , _latchLW = w
-                }
-            -- writer is alive only as long as the latch is alive
-            _  <- mkWeakRefValue latch lw
-            P p `addChild` L lw
+  w  <- mkWeakRefValue latch latch
+  lw <- newRef LatchWrite
+      { _evalLW  = maybe err id <$> readPulseP p
+      , _latchLW = w
+      }
+  -- writer is alive only as long as the latch is alive
+  _  <- mkWeakRefValue latch lw
+  P p `addChild` L lw
 
-    return (updateOn, latch)
+  return latch
 
 -- | Make a new 'Latch' that caches a previous computation.
 cachedLatch :: (MonadFix m, MonadIO m) => EvalL a -> m (Latch a)
@@ -108,7 +107,7 @@ cachedLatch eval = mdo
       { _seenL  = agesAgo
       , _valueL = error "Undefined value of a cached latch."
       , _evalL  = do
-          Latch{..} <- liftIO $ readRef latch
+          Latch{..} <- readRef latch
           -- calculate current value (lazy!) with timestamp
           (a,time)  <- RW.listen eval
           liftIO $ if time <= _seenL
@@ -126,10 +125,10 @@ cachedLatch eval = mdo
 -- TODO: Return function to unregister the output again.
 addOutput :: Pulse EvalO -> Build ()
 addOutput p = do
-    o <- liftIO $ newRef $ Output
+    o <- newRef $ Output
         { _evalO = maybe (return $ debug "nop") id <$> readPulseP p
         }
-    (P p) `addChild` (O o)
+    P p `addChild` O o
     RW.tell $ BuildW (mempty, [o], mempty, mempty)
 
 {-----------------------------------------------------------------------------
