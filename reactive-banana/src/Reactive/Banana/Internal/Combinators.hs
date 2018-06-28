@@ -11,6 +11,7 @@ import           Control.Monad.Fix
 import           Control.Monad.IO.Class
 import           Control.Monad.Trans.Class           (lift)
 import           Control.Monad.Trans.Reader
+import           Data.Coerce
 import           Data.Functor
 import           Data.Functor.Identity
 import           Data.IORef
@@ -26,9 +27,9 @@ type Future  = Prim.Future
 {-----------------------------------------------------------------------------
     Types
 ------------------------------------------------------------------------------}
-type Behavior a = Cached Moment (Latch a, Pulse ())
+-- type Behavior a = Cached Moment (Latch a, Pulse ())
 type Event a    = Cached Moment (Pulse a)
-type Moment     = ReaderT EventNetwork Prim.Build
+type Moment     = ReaderT EventNetwork Build
 
 liftBuild :: Build a -> Moment a
 liftBuild = lift
@@ -39,7 +40,7 @@ liftBuild = lift
 interpret :: (Event a -> Moment (Event b)) -> [Maybe a] -> IO [Maybe b]
 interpret f = Prim.interpret $ \pulse -> runReaderT (g pulse) undefined
     where
-    g pulse = runCached =<< f (Prim.fromPure pulse)
+    g pulse = runCached =<< f (fromPure pulse)
     -- Ignore any  addHandler  inside the  Moment
 
 {-----------------------------------------------------------------------------
@@ -78,14 +79,18 @@ compile setup = do
 
     return $ eventNetwork
 
-fromAddHandler :: AddHandler a -> Moment (Event a)
+fromAddHandler
+  :: AddHandler a
+  -> Moment (Cached Moment (Pulse a))
 fromAddHandler addHandler = do
     (p, fire) <- liftBuild $ Prim.newInput
     network   <- ask
     liftIO $ register addHandler $ runStep network . fire
-    return $ Prim.fromPure p
+    return (fromPure p)
 
-addReactimate :: Event (Future (IO ())) -> Moment ()
+addReactimate
+  :: Cached Moment (Pulse (Future (IO ())))
+  -> Moment ()
 addReactimate e = do
     network   <- ask
     liftBuild $ Prim.buildLater $ do
@@ -93,69 +98,99 @@ addReactimate e = do
         p <- runReaderT (runCached e) network
         Prim.addHandler p id
 
-fromPoll :: IO a -> Moment (Behavior a)
+fromPoll
+  :: IO a
+  -> Moment (Cached Moment (Latch a, Pulse ()))
 fromPoll poll = do
     a <- liftIO poll
     e <- liftBuild $ do
         p <- Prim.unsafeMapIOP (const poll) =<< Prim.alwaysP
-        return $ Prim.fromPure p
+        return (fromPure p)
     stepperB a e
 
 liftIONow :: IO a -> Moment a
-liftIONow = liftIO
+liftIONow =
+  liftIO
 
 liftIOLater :: IO () -> Moment ()
-liftIOLater = lift . Prim.liftBuild . Prim.liftIOLater
+liftIOLater =
+  liftBuild . Prim.liftIOLater
 
-imposeChanges :: Behavior a -> Event () -> Behavior a
-imposeChanges = liftCached2 $ \(l1,_) p2 -> return (l1,p2)
+imposeChanges
+  :: Cached Moment (Latch a, Pulse ())
+  -> Cached Moment (Pulse ())
+  -> Cached Moment (Latch a, Pulse ())
+imposeChanges b e =
+  cache $ do
+    (l1, _) <- runCached b
+    p2 <- runCached e
+    pure (l1, p2)
 
 {-----------------------------------------------------------------------------
     Combinators - basic
 ------------------------------------------------------------------------------}
-never :: Event a
+
+never :: Cached Moment (Pulse a)
 never =
-  don'tCache (lift Prim.neverP)
+  don'tCache Prim.neverP
 
-unionWith :: (a -> a -> a) -> Event a -> Event a -> Event a
-unionWith f event1 event2 =
+unionWith
+  :: (a -> a -> a)
+  -> Cached Moment (Pulse a)
+  -> Cached Moment (Pulse a)
+  -> Cached Moment (Pulse a)
+unionWith f e1 e2 =
   cache $ do
-    pulse1 <- runCached event1
-    pulse2 <- runCached event2
-    lift (Prim.unionWithP f pulse1 pulse2)
+    p1 <- runCached e1
+    p2 <- runCached e2
+    lift (Prim.unionWithP f p1 p2)
 
-filterJust :: Event (Maybe a) -> Event a
-filterJust event =
+filterJust
+  :: Cached Moment (Pulse (Maybe a))
+  -> Cached Moment (Pulse a)
+filterJust e =
   cache $ do
-    pulse <- runCached event
-    lift (Prim.filterJustP pulse)
+    p <- runCached e
+    lift (Prim.filterJustP p)
 
-mapE :: (a -> b) -> Event a -> Event b
-mapE f event = cache $ do
-  pulse <- runCached event
-  lift (Prim.mapP f pulse)
-
-applyE :: Behavior (a -> b) -> Event a -> Event b
-applyE behavior event =
+mapE
+  :: (a -> b)
+  -> Cached Moment (Pulse a)
+  -> Cached Moment (Pulse b)
+mapE f e =
   cache $ do
-    ~(latch, _) <- runCached behavior
-    pulse <- runCached event
-    lift (Prim.applyP latch pulse)
+    p <- runCached e
+    lift (Prim.mapP f p)
 
-changesB :: Behavior a -> Event (Future a)
-changesB behavior =
+applyE
+  :: Cached Moment (Latch (a -> b), Pulse ())
+  -> Cached Moment (Pulse a)
+  -> Cached Moment (Pulse b)
+applyE b e =
   cache $ do
-    ~(latch, pulse) <- runCached behavior
-    liftBuild (Prim.tagFuture latch pulse)
+    ~(l, _) <- runCached b
+    p <- runCached e
+    lift (Prim.applyP l p)
 
-pureB :: a -> Behavior a
+changesB
+  :: Cached Moment (Latch a, Pulse ())
+  -> Cached Moment (Pulse (Future a))
+changesB b =
+  cache $ do
+    ~(l, p) <- runCached b
+    liftBuild (Prim.tagFuture l p)
+
+pureB :: a -> Cached Moment (Latch a, Pulse ())
 pureB a =
   cache $ do
     p <- runCached never
     l <- Prim.pureL a
     pure (l, p)
 
-applyB :: Behavior (a -> b) -> Behavior a -> Behavior b
+applyB
+  :: Cached Moment (Latch (a -> b), Pulse ())
+  -> Cached Moment (Latch a, Pulse ())
+  -> Cached Moment (Latch b, Pulse ())
 applyB bf bx =
   cache $ do
     ~(lf, cf) <- runCached bf
@@ -165,7 +200,10 @@ applyB bf bx =
       ly <- Prim.applyL lf lx
       pure (ly, cy)
 
-mapB :: (a -> b) -> Behavior a -> Behavior b
+mapB
+  :: (a -> b)
+  -> Cached Moment (Latch a, Pulse ())
+  -> Cached Moment (Latch b, Pulse ())
 mapB f =
   applyB (pureB f)
 
@@ -187,7 +225,11 @@ cacheAndSchedule m = ask >>= \r -> liftBuild $ do
     Prim.buildLater $ void $ runReaderT (runCached c) r
     return c
 
-stepperB :: forall a. a -> Event a -> Moment (Behavior a)
+stepperB
+  :: forall a.
+     a
+  -> Cached Moment (Pulse a)
+  -> Moment (Cached Moment (Latch a, Pulse ()))
 stepperB a e =
   cacheAndSchedule $ do
     p0 :: Pulse a <- runCached e
@@ -197,10 +239,15 @@ stepperB a e =
       (l,_) <- Prim.accumL a p1
       return (l,p2)
 
-accumE :: a -> Event (a -> a) -> Moment (Event a)
+accumE
+  :: a
+  -> Cached Moment (Pulse (a -> a))
+  -> Moment (Cached Moment (Pulse a))
 accumE a e1 =
   cacheAndSchedule $ do
-    p0 :: Pulse (a -> a) <- runCached e1
+    p0 :: Pulse (a -> a) <-
+      runCached e1
+
     lift $ do
       (_, p1) <- Prim.accumL a p0
       return p1
@@ -208,18 +255,23 @@ accumE a e1 =
 {-----------------------------------------------------------------------------
     Combinators - dynamic event switching
 ------------------------------------------------------------------------------}
-liftBuildFun :: (Build a -> Build b) -> Moment a -> Moment b
-liftBuildFun f m = do
-    r <- ask
-    liftBuild $ f $ runReaderT m r
 
-valueB :: Behavior a -> Moment a
+liftBuildFun :: (Build a -> Build b) -> Moment a -> Moment b
+liftBuildFun =
+    mapReaderT
+
+valueB
+  :: Cached Moment (Latch a, Pulse ())
+  -> Moment a
 valueB b = do
-    ~(l,_) <- runCached b
+    ~(l, _) <- runCached b
     lift (Prim.readLatch l)
 
-valueBLater :: Behavior a -> Moment a
-valueBLater = liftBuildFun Prim.buildLaterReadNow . valueB
+valueBLater
+  :: Cached Moment (Latch a, Pulse ())
+  -> Moment a
+valueBLater b =
+  liftBuildFun Prim.buildLaterReadNow (valueB b)
 
 executeP :: Pulse (Moment a) -> Moment (Pulse a)
 executeP p1 = do
@@ -228,32 +280,62 @@ executeP p1 = do
     p2 <- Prim.mapP runReaderT p1
     Prim.executeP p2 r
 
-observeE :: Event (Moment a) -> Event a
-observeE = liftCached1 $ executeP
+observeE
+  :: Cached Moment (Pulse (Moment a))
+  -> Cached Moment (Pulse a)
+observeE e =
+  cache (executeCachedP e)
 
-executeE :: Event (Moment a) -> Moment (Event a)
+executeE
+  :: Cached Moment (Pulse (Moment a))
+  -> Moment (Cached Moment (Pulse a))
 executeE e = do
     -- Run cached computation later to allow more recursion with `Moment`
-    p <- liftBuildFun Prim.buildLaterReadNow $ executeP =<< runCached e
-    return $ fromPure p
+    p :: Pulse a <-
+      liftBuildFun Prim.buildLaterReadNow (executeCachedP e)
+    pure (fromPure p)
 
-switchE :: Event (Event a) -> Moment (Event a)
-switchE e = ask >>= \r -> cacheAndSchedule $ do
-    p1 <- runCached e
-    liftBuild $ do
-        p2 <- Prim.mapP (runReaderT . runCached) p1
-        p3 <- Prim.executeP p2 r
+executeCachedP :: Cached Moment (Pulse (Moment a)) -> Moment (Pulse a)
+executeCachedP = runCached >=> executeP
+
+switchE
+  :: Cached Moment (Pulse (Cached Moment (Pulse a)))
+  -> Moment (Cached Moment (Pulse a))
+switchE e =
+  ask >>= \r ->
+    cacheAndSchedule $ do
+      p1 :: Pulse (Cached Moment (Pulse a)) <-
+        runCached e
+      liftBuild $ do
+        p2 :: Pulse (EventNetwork -> Build (Pulse a)) <-
+          Prim.mapP (runReaderT . runCached) p1
+        p3 :: Pulse (Pulse a) <-
+          Prim.executeP p2 r
         Prim.switchP p3
 
-switchB :: Behavior a -> Event (Behavior a) -> Moment (Behavior a)
-switchB b e = ask >>= \r -> cacheAndSchedule $ do
-    ~(l0,p0) <- runCached b
-    p1       <- runCached e
-    liftBuild $ do
-        p2 <- Prim.mapP (runReaderT . runCached) p1
-        p3 <- Prim.executeP p2 r
+switchB
+  :: Cached Moment (Latch a, Pulse ())
+  -> Cached Moment (Pulse (Cached Moment (Latch a, Pulse ())))
+  -> Moment (Cached Moment (Latch a, Pulse ()))
+switchB b e =
+  ask >>= \r ->
+    cacheAndSchedule $ do
+      ~(l0, p0) :: (Latch a, Pulse ()) <-
+        runCached b
 
-        lr <- Prim.switchL l0 =<< Prim.mapP fst p3
+      p1 :: Pulse (Cached Moment (Latch a, Pulse ())) <-
+        runCached e
+
+      liftBuild $ do
+        p2 :: Pulse (EventNetwork -> Build (Latch a, Pulse ())) <-
+          Prim.mapP (runReaderT . runCached) p1
+
+        p3 :: Pulse (Latch a, Pulse ()) <-
+          Prim.executeP p2 r
+
+        lr :: Latch a <-
+          Prim.switchL l0 =<< Prim.mapP fst p3
+
         -- TODO: switch away the initial behavior
         let c1 = p0                              -- initial behavior changes
         c2 <- Prim.mapP (const ()) p3            -- or switch happens

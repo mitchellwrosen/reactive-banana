@@ -3,6 +3,7 @@
 ------------------------------------------------------------------------------}
 {-# LANGUAGE ExistentialQuantification, NamedFieldPuns #-}
 {-# LANGUAGE TypeSynonymInstances, FlexibleInstances #-}
+{-# LANGUAGE RoleAnnotations #-}
 module Reactive.Banana.Prim.Types where
 
 import           Control.Monad.Trans.RWSIO
@@ -96,6 +97,7 @@ update (Lens get set) f = \s -> set (f $ get s) s
     Pulse and Latch
 ------------------------------------------------------------------------------}
 type Pulse  a = Ref (Pulse' a)
+
 data Pulse' a = Pulse
     { _keyP      :: Lazy.Key (Maybe a) -- Key to retrieve pulse from cache.
     , _seenP     :: !Time              -- See note [Timestamp].

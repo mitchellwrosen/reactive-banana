@@ -2,7 +2,7 @@
 {-----------------------------------------------------------------------------
     reactive-banana
 ------------------------------------------------------------------------------}
-{-# LANGUAGE MagicHash, UnboxedTuples #-}
+{-# LANGUAGE MagicHash, UnboxedTuples, RoleAnnotations #-}
 module Reactive.Banana.Prim.Util where
 
 import           Control.Monad
@@ -27,9 +27,10 @@ nop = return ()
 {-----------------------------------------------------------------------------
     IORefs that can be hashed
 ------------------------------------------------------------------------------}
+type role Ref representational
 data Ref a = Ref !(IORef a) !Unique
 
-instance Hashable (Ref a) where hashWithSalt s (Ref _ u) = hashWithSalt s u 
+instance Hashable (Ref a) where hashWithSalt s (Ref _ u) = hashWithSalt s u
 
 equalRef :: Ref a -> Ref b -> Bool
 equalRef (Ref _ a) (Ref _ b) = a == b

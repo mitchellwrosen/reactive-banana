@@ -8,7 +8,6 @@ module Reactive.Banana.Prim.Cached (
     --
     -- Very useful for observable sharing.
     Cached, runCached, cache, fromPure, don'tCache,
-    liftCached1, liftCached2,
     ) where
 
 import Control.Monad
@@ -36,8 +35,8 @@ cache = unsafePerformIO . cacheIO
 cacheIO :: (MonadFix m, MonadIO m) => m a -> IO (Cached m a)
 cacheIO m = do
   key <- newIORef Nothing
-  return $ Cached $ do
-    ma <- liftIO $ readIORef key    -- read the cached result
+  return . Cached $ do
+    ma <- liftIO (readIORef key)    -- read the cached result
     case ma of
       Just a  -> return a         -- return the cached result.
       Nothing -> mdo
@@ -54,15 +53,9 @@ fromPure = Cached . return
 don'tCache :: Monad m => m a -> Cached m a
 don'tCache = Cached
 
-liftCached1 :: (MonadFix m, MonadIO m) =>
-    (a -> m b) -> Cached m a -> Cached m b
-liftCached1 f ca = cache $ do
-    a <- runCached ca
-    f a
-
-liftCached2 :: (MonadFix m, MonadIO m) =>
-    (a -> b -> m c) -> Cached m a -> Cached m b -> Cached m c
-liftCached2 f ca cb = cache $ do
-    a <- runCached ca
-    b <- runCached cb
-    f a b
+-- liftCached2 :: (MonadFix m, MonadIO m) =>
+--     (a -> b -> m c) -> Cached m a -> Cached m b -> Cached m c
+-- liftCached2 f ca cb = cache $ do
+--     a <- runCached ca
+--     b <- runCached cb
+--     f a b

@@ -166,9 +166,6 @@ buildLaterReadNow m = do
     buildLater $ m >>= liftIO . writeIORef ref
     liftIO $ unsafeInterleaveIO $ readIORef ref
 
-liftBuild :: Build a -> BuildIO a
-liftBuild = id
-
 getTimeB :: Build Time
 getTimeB = (\(x,_) -> x) <$> RW.ask
 

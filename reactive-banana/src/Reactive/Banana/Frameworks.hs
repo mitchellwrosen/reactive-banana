@@ -40,6 +40,7 @@ module Reactive.Banana.Frameworks (
 import           Control.Event.Handler
 import           Control.Monad
 import           Control.Monad.IO.Class
+import           Data.Coerce
 import           Data.IORef
 import           Reactive.Banana.Combinators
 import qualified Reactive.Banana.Internal.Combinators as Prim

@@ -12,16 +12,16 @@ main = test_space1
 {-----------------------------------------------------------------------------
     Functionality tests
 ------------------------------------------------------------------------------}
-test_accumL1 :: Pulse Int -> BuildIO (Pulse Int)
-test_accumL1 p1 = liftBuild $ do
+test_accumL1 :: Pulse Int -> Build (Pulse Int)
+test_accumL1 p1 = do
     p2     <- mapP (+) p1
     (l1,_) <- accumL 0 p2
     l2     <- mapL const l1
     p3     <- applyP l2 p1
     return p3
 
-test_recursion1 :: Pulse () -> BuildIO (Pulse Int)
-test_recursion1 p1 = liftBuild $ mdo
+test_recursion1 :: Pulse () -> Build (Pulse Int)
+test_recursion1 p1 = mdo
     p2      <- applyP l2 p1
     p3      <- mapP (const (+1)) p2
     ~(l1,_) <- accumL (0::Int) p3

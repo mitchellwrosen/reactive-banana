@@ -111,19 +111,21 @@ accumL a pf = mdo
 {-----------------------------------------------------------------------------
     Combinators - dynamic event switching
 ------------------------------------------------------------------------------}
+
 switchL :: Latch a -> Pulse (Latch a) -> Build (Latch a)
-switchL l pl = mdo
-    x <- stepperL l pl
-    cachedLatch (getValueL x >>= getValueL)
+switchL l pl = do
+  x <- stepperL l pl
+  cachedLatch (getValueL x >>= getValueL)
 
 executeP :: forall a b. Pulse (b -> Build a) -> b -> Build (Pulse a)
 executeP p1 b = do
-        p2 <- newPulse "executeP" $ {-# SCC executeP #-} eval =<< readPulseP p1
-        p2 `dependOn` p1
-        return p2
-    where
+  p2 :: Pulse a <-
+    newPulse "executeP" (eval =<< readPulseP p1)
+  p2 `dependOn` p1
+  return p2
+  where
     eval :: Maybe (b -> Build a) -> EvalP (Maybe a)
-    eval (Just x) = Just <$> liftBuildP (x b)
+    eval (Just f) = Just <$> liftBuildP (f b)
     eval Nothing  = return Nothing
 
 switchP :: Pulse (Pulse a) -> Build (Pulse a)

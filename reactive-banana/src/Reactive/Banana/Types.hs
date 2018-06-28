@@ -13,7 +13,11 @@ import Control.Applicative
 import Control.Monad
 import Control.Monad.IO.Class
 import Control.Monad.Fix
+import Control.Monad.Trans.Reader
 import Data.String (IsString(..))
+
+import Reactive.Banana.Prim.Cached (Cached)
+import Reactive.Banana.Prim.Types (Latch, Pulse)
 
 import qualified Reactive.Banana.Internal.Combinators as Prim
 
@@ -71,7 +75,8 @@ Semantically, you can think of it as a function
 
 <<doc/frp-behavior.png>>
 -}
-newtype Behavior a = B { unB :: Prim.Behavior a }
+newtype Behavior a
+  = B { unB :: Cached (ReaderT Prim.EventNetwork Prim.Build) (Latch a, Pulse ()) }
 
 -- | The function 'pure' returns a value that is constant in time. Semantically,
 --
