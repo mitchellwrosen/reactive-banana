@@ -1,8 +1,7 @@
 {-----------------------------------------------------------------------------
     reactive-banana
 ------------------------------------------------------------------------------}
-{-# LANGUAGE Rank2Types #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE MultiParamTypeClasses, Rank2Types #-}
 
 module Reactive.Banana.Combinators (
     -- * Synopsis
@@ -43,10 +42,9 @@ module Reactive.Banana.Combinators (
     ) where
 
 import Control.Applicative
-import Control.Monad
-import Data.Maybe          (isJust, catMaybes)
 import Data.Semigroup
 
+import           Reactive.Banana.Event (Event(..))
 import qualified Reactive.Banana.Internal.Combinators as Prim
 import           Reactive.Banana.Types
 

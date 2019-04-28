@@ -41,6 +41,7 @@ Source-repository head
 
 Library
     default-language:   Haskell98
+    ghc-options:        -Wall
     hs-source-dirs:     src
 
     build-depends:      base >= 4.2 && < 5,
@@ -58,8 +59,7 @@ Library
                         Reactive.Banana.Combinators,
                         Reactive.Banana.Frameworks,
                         Reactive.Banana.Model,
-                        Reactive.Banana.Prim,
-                        Reactive.Banana.Prim.Cached
+                        Reactive.Banana.Prim
 
     other-modules:
                         Control.Monad.Trans.ReaderWriterIO,
@@ -76,7 +76,27 @@ Library
                         Reactive.Banana.Prim.Test,
                         Reactive.Banana.Prim.Types,
                         Reactive.Banana.Prim.Util,
-                        Reactive.Banana.Types
+                        Reactive.Banana.Types,
+
+                        Reactive.Banana.Action,
+                        Reactive.Banana.Build,
+                        Reactive.Banana.Cached,
+                        Reactive.Banana.EvalL,
+                        Reactive.Banana.EvalLW,
+                        Reactive.Banana.EvalO,
+                        Reactive.Banana.EvalP,
+                        Reactive.Banana.EvalPW,
+                        Reactive.Banana.Event,
+                        Reactive.Banana.EventNetwork,
+                        Reactive.Banana.Latch,
+                        Reactive.Banana.LatchWrite,
+                        Reactive.Banana.Level,
+                        Reactive.Banana.Moment,
+                        Reactive.Banana.Network,
+                        Reactive.Banana.Output,
+                        Reactive.Banana.Pulse,
+                        Reactive.Banana.Ref,
+                        Reactive.Banana.Time
 
 Test-Suite tests
     default-language:   Haskell98

@@ -1,26 +1,42 @@
 {-----------------------------------------------------------------------------
     reactive-banana
 ------------------------------------------------------------------------------}
-{-# LANGUAGE RecordWildCards, RecursiveDo, BangPatterns, ScopedTypeVariables #-}
+{-# LANGUAGE RecordWildCards, RecursiveDo, ScopedTypeVariables #-}
 module Reactive.Banana.Prim.Plumbing where
 
-import           Control.Monad                                (join)
-import           Control.Monad.IO.Class
-import           Control.Monad.Trans.Class
-import qualified Control.Monad.Trans.RWSIO          as RWS
-import qualified Control.Monad.Trans.Reader         as Reader
-import qualified Control.Monad.Trans.ReaderWriterIO as RW
-import           Data.Function                                (on)
-import           Data.Functor
-import           Data.IORef
-import           Data.List                                    (sortBy)
-import           Data.Monoid
-import qualified Data.Vault.Lazy                    as Lazy
-import           System.IO.Unsafe
+import Reactive.Banana.Action (Action(..))
+import Reactive.Banana.Build (Build, BuildIO, BuildR, BuildW(..))
+import Reactive.Banana.EvalL (EvalL)
+import Reactive.Banana.EvalO (EvalO, Future)
+import Reactive.Banana.EvalP (EvalP)
+import Reactive.Banana.EvalPW (EvalPW)
+import Reactive.Banana.Latch (Latch, Latch'(..))
+import Reactive.Banana.LatchWrite (LatchWrite'(..))
+import Reactive.Banana.Level (ground)
+import Reactive.Banana.Output (Output, Output'(..))
+import Reactive.Banana.Prim.Types
+import Reactive.Banana.Prim.Util
+import Reactive.Banana.Pulse (Pulse, Pulse'(..), readPulseP)
+import Reactive.Banana.Ref (mkWeakRefValue, newRef, put, readRef)
+import Reactive.Banana.SomeNode (SomeNode(..))
+import Reactive.Banana.Time (Time, agesAgo, beginning)
 
 import qualified Reactive.Banana.Prim.Dependencies as Deps
-import           Reactive.Banana.Prim.Types
-import           Reactive.Banana.Prim.Util
+
+import Control.Monad (join)
+import Control.Monad.IO.Class
+import Control.Monad.Trans.Class
+import Data.Function (on)
+import Data.Functor
+import Data.IORef
+import Data.List (sortBy)
+import Data.Monoid
+import System.IO.Unsafe
+
+import qualified Control.Monad.Trans.Reader as Reader
+import qualified Control.Monad.Trans.ReaderWriterIO as RW
+import qualified Control.Monad.Trans.RWSIO as RWS
+import qualified Data.Vault.Lazy as Lazy
 
 {-----------------------------------------------------------------------------
     Build primitive pulses and latches
@@ -133,7 +149,7 @@ addOutput p = do
     Build monad
 ------------------------------------------------------------------------------}
 runBuildIO :: BuildR -> BuildIO a -> IO (a, Action, [Output])
-runBuildIO i m = {-# SCC runBuild #-} do
+runBuildIO i m = do
         (a, BuildW (topologyUpdates, os, liftIOLaters, _)) <- unfold mempty m
         doit $ liftIOLaters          -- execute late IOs
         return (a,Action $ Deps.buildDependencies topologyUpdates,os)
@@ -173,9 +189,6 @@ getTimeB = (\(x,_) -> x) <$> RW.ask
 alwaysP :: Build (Pulse ())
 alwaysP = (\(_,x) -> x) <$> RW.ask
 
-readLatchB :: Latch a -> Build a
-readLatchB = liftIO . readLatchIO
-
 dependOn :: Pulse child -> Pulse parent -> Build ()
 dependOn child parent = (P parent) `addChild` (P child)
 
@@ -196,59 +209,8 @@ liftIOLater x = RW.tell $ BuildW (mempty, mempty, Action x, mempty)
 {-----------------------------------------------------------------------------
     EvalL monad
 ------------------------------------------------------------------------------}
--- | Evaluate a latch (-computation) at the latest time,
--- but discard timestamp information.
-readLatchIO :: Latch a -> IO a
-readLatchIO latch = do
-    Latch{..} <- readRef latch
-    liftIO $ fst <$> RW.runReaderWriterIOT _evalL ()
 
 getValueL :: Latch a -> EvalL a
 getValueL latch = do
     Latch{..} <- readRef latch
     _evalL
-
-{-----------------------------------------------------------------------------
-    EvalP monad
-------------------------------------------------------------------------------}
-runEvalP :: Lazy.Vault -> EvalP a -> Build (a, EvalPW)
-runEvalP s1 m = RW.readerWriterIOT $ \r2 -> do
-    (a,_,(w1,w2)) <- RWS.runRWSIOT m r2 s1
-    return ((a,w1), w2)
-
-liftBuildP :: Build a -> EvalP a
-liftBuildP m = RWS.rwsT $ \r2 s -> do
-    (a,w2) <- RW.runReaderWriterIOT m r2
-    return (a,s,(mempty,w2))
-
-askTime :: EvalP Time
-askTime = fst <$> RWS.ask
-
-readPulseP :: Pulse a -> EvalP (Maybe a)
-readPulseP p = do
-    Pulse{..} <- readRef p
-    join . Lazy.lookup _keyP <$> RWS.get
-
-writePulseP :: Lazy.Key (Maybe a) -> Maybe a -> EvalP ()
-writePulseP key a = do
-    s <- RWS.get
-    RWS.put $ Lazy.insert key a s
-
-readLatchP :: Latch a -> EvalP a
-readLatchP = liftBuildP . readLatchB
-
-readLatchFutureP :: Latch a -> EvalP (Future a)
-readLatchFutureP = return . readLatchIO
-
-rememberLatchUpdate :: IO () -> EvalP ()
-rememberLatchUpdate x = RWS.tell ((Action x,mempty),mempty)
-
-rememberOutput :: (Output, EvalO) -> EvalP ()
-rememberOutput x = RWS.tell ((mempty,[x]),mempty)
-
--- worker wrapper to break sharing and support better inlining
-unwrapEvalP :: RWS.Tuple r w s -> RWS.RWSIOT r w s m a -> m a
-unwrapEvalP r m = RWS.run m r
-
-wrapEvalP :: (RWS.Tuple r w s -> m a) -> RWS.RWSIOT r w s m a
-wrapEvalP m = RWS.R m

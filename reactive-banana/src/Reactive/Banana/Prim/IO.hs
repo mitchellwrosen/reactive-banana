@@ -1,20 +1,29 @@
 {-----------------------------------------------------------------------------
     reactive-banana
 ------------------------------------------------------------------------------}
-{-# LANGUAGE RecursiveDo #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE RecursiveDo, ScopedTypeVariables #-}
 module Reactive.Banana.Prim.IO where
 
-import           Control.Monad.IO.Class
-import           Data.Functor
-import           Data.IORef
-import qualified Data.Vault.Lazy        as Lazy
-
+import Reactive.Banana.Build (Build)
+import Reactive.Banana.EvalO (Future)
+import Reactive.Banana.Latch (Latch, readLatchB)
+import Reactive.Banana.Level (ground)
+import Reactive.Banana.Network (Network)
 import Reactive.Banana.Prim.Combinators (mapP)
-import Reactive.Banana.Prim.Evaluation  (step)
+import Reactive.Banana.Prim.Evaluation (step)
 import Reactive.Banana.Prim.Plumbing
 import Reactive.Banana.Prim.Types
 import Reactive.Banana.Prim.Util
+import Reactive.Banana.Pulse (Pulse, Pulse'(..), readPulseP)
+import Reactive.Banana.Ref (newRef)
+import Reactive.Banana.SomeNode (SomeNode(..))
+import Reactive.Banana.Time (agesAgo)
+
+import Control.Monad.IO.Class
+import Data.Functor
+import Data.IORef
+
+import qualified Data.Vault.Lazy as Lazy
 
 debug s = id
 
@@ -25,7 +34,7 @@ debug s = id
 --
 -- Together with 'addHandler', this function can be used to operate with
 -- pulses as with standard callback-based events.
-newInput :: forall a. Build (Pulse a, a -> Step)
+newInput :: forall a. Build (Pulse a, a -> Network -> IO (IO (), Network))
 newInput = mdo
     always <- alwaysP
     key    <- liftIO $ Lazy.newKey
@@ -39,7 +48,7 @@ newInput = mdo
         , _nameP     = "newInput"
         }
     -- Also add the  alwaysP  pulse to the inputs.
-    let run :: a -> Step
+    let run :: a -> Network -> IO (IO (), Network)
         run a = step ([P pulse, P always], Lazy.insert key (Just a) Lazy.empty)
     return (pulse, run)
 

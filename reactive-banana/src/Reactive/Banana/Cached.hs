@@ -1,13 +1,13 @@
 {-----------------------------------------------------------------------------
     reactive-banana
 ------------------------------------------------------------------------------}
-{-# LANGUAGE RecursiveDo #-}
-module Reactive.Banana.Prim.Cached (
+{-# LANGUAGE DeriveAnyClass, DeriveFunctor, RecursiveDo #-}
+module Reactive.Banana.Cached (
     -- | Utility for executing monadic actions once
     -- and then retrieving values from a cache.
     --
     -- Very useful for observable sharing.
-    Cached, runCached, cache, fromPure, don'tCache,
+    Cached, runCached, cache, don'tCache,
     liftCached1, liftCached2,
     ) where
 
@@ -21,6 +21,7 @@ import System.IO.Unsafe       (unsafePerformIO)
     Cache type
 ------------------------------------------------------------------------------}
 data Cached m a = Cached (m a)
+  deriving (Functor, Applicative, Monad)
 
 runCached :: Cached m a -> m a
 runCached (Cached x) = x
@@ -42,10 +43,6 @@ cache m = unsafePerformIO $ do
                     writeIORef key (Just a)
                 a <- m                  -- evaluate
                 return a
-
--- | Return a pure value. Doesn't make use of the cache.
-fromPure :: Monad m => a -> Cached m a
-fromPure = Cached . return
 
 -- | Lift an action that is /not/ cached, for instance because it is idempotent.
 don'tCache :: Monad m => m a -> Cached m a

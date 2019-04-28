@@ -4,16 +4,22 @@
 {-# LANGUAGE BangPatterns #-}
 module Reactive.Banana.Prim.Compile where
 
+import Reactive.Banana.Action (doit)
+import Reactive.Banana.Build (BuildIO)
+import Reactive.Banana.Network (Network(..), emptyNetwork)
+import Reactive.Banana.Prim.Combinators
+import Reactive.Banana.Prim.IO
+import Reactive.Banana.Prim.Plumbing
+import Reactive.Banana.Prim.Types
+import Reactive.Banana.Pulse (Pulse)
+import Reactive.Banana.Time (next)
+
+import qualified Reactive.Banana.Prim.OrderedBag as OB
+
 import Control.Exception (evaluate)
-import Control.Monad     (void)
+import Control.Monad (void)
 import Data.Functor
 import Data.IORef
-
-import           Reactive.Banana.Prim.Combinators
-import           Reactive.Banana.Prim.IO
-import qualified Reactive.Banana.Prim.OrderedBag  as OB
-import           Reactive.Banana.Prim.Plumbing
-import           Reactive.Banana.Prim.Types
 
 {-----------------------------------------------------------------------------
    Compilation
@@ -80,11 +86,11 @@ interpret f xs = do
 runSpaceProfile :: Show b => (Pulse a -> BuildIO (Pulse b)) -> [a] -> IO ()
 runSpaceProfile f xs = do
     let g = do
-        (p1, fire) <- liftBuild $ newInput
-        p2 <- f p1
-        p3 <- mapP return p2                -- wrap into Future
-        addHandler p3 (\b -> void $ evaluate b)
-        return fire
+          (p1, fire) <- liftBuild $ newInput
+          p2 <- f p1
+          p3 <- mapP return p2                -- wrap into Future
+          addHandler p3 (\b -> void $ evaluate b)
+          return fire
     (step,network) <- compile g emptyNetwork
 
     let fire x s1 = do

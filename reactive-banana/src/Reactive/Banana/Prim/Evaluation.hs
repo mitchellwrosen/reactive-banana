@@ -1,27 +1,44 @@
 {-----------------------------------------------------------------------------
     reactive-banana
 ------------------------------------------------------------------------------}
-{-# LANGUAGE RecordWildCards, BangPatterns #-}
+{-# LANGUAGE RecordWildCards #-}
 module Reactive.Banana.Prim.Evaluation (
     step
     ) where
 
-import qualified Control.Exception                  as Strict (evaluate)
-import           Control.Monad                                (foldM)
-import           Control.Monad                                (join)
-import           Control.Monad.IO.Class
-import qualified Control.Monad.Trans.RWSIO          as RWS
-import qualified Control.Monad.Trans.ReaderWriterIO as RW
-import           Data.Functor
-import           Data.Maybe
-import qualified Data.PQueue.Prio.Min               as Q
-import qualified Data.Vault.Lazy                    as Lazy
-import           System.Mem.Weak
+import Reactive.Banana.Action (doit)
+import Reactive.Banana.Build (BuildR, BuildW)
+import Reactive.Banana.EvalO (EvalO)
+import Reactive.Banana.EvalP (EvalP, askTime, rememberOutput, runEvalP,
+                              unwrapEvalP, wrapEvalP)
+import Reactive.Banana.EvalPW (EvalPW)
+import Reactive.Banana.Latch (Latch'(..), rememberLatchUpdate)
+import Reactive.Banana.LatchWrite (LatchWrite'(..))
+import Reactive.Banana.Level (Level, ground)
+import Reactive.Banana.Network (Network(..))
+import Reactive.Banana.Output (Output, Output'(..))
+import Reactive.Banana.Prim.Plumbing
+import Reactive.Banana.Prim.Types
+import Reactive.Banana.Prim.Util
+import Reactive.Banana.Pulse (Pulse'(..), readPulseP, writePulseP)
+import Reactive.Banana.Ref (modify', put, readRef)
+import Reactive.Banana.SomeNode (SomeNode(..))
+import Reactive.Banana.Time (next)
 
 import qualified Reactive.Banana.Prim.OrderedBag as OB
-import           Reactive.Banana.Prim.Plumbing
-import           Reactive.Banana.Prim.Types
-import           Reactive.Banana.Prim.Util
+
+import Control.Monad (foldM)
+import Control.Monad (join)
+import Control.Monad.IO.Class
+import Data.Functor
+import Data.Maybe
+import System.Mem.Weak
+
+import qualified Control.Exception as Strict (evaluate)
+import qualified Control.Monad.Trans.ReaderWriterIO as RW
+import qualified Control.Monad.Trans.RWSIO as RWS
+import qualified Data.PQueue.Prio.Min as Q
+import qualified Data.Vault.Lazy as Lazy
 
 type Queue = Q.MinPQueue Level
 
@@ -30,13 +47,13 @@ type Queue = Q.MinPQueue Level
 ------------------------------------------------------------------------------}
 -- | Evaluate all the pulses in the graph,
 -- Rebuild the graph as necessary and update the latch values.
-step :: Inputs -> Step
+step :: ([SomeNode], Lazy.Vault) -> Network -> IO (IO (), Network)
 step (inputs,pulses)
         Network{ nTime = time1
         , nOutputs = outputs1
         , nAlwaysP = Just alwaysP   -- we assume that this has been built already
         }
-    = {-# SCC step #-} do
+    = do
 
     -- evaluate pulses
     ((_, (latchUpdates, outputs)), topologyUpdates, os)
@@ -68,8 +85,8 @@ evaluatePulses :: [SomeNode] -> EvalP ()
 evaluatePulses roots = wrapEvalP $ \r -> go r =<< insertNodes r roots Q.empty
     where
     go :: RWS.Tuple BuildR (EvalPW, BuildW) Lazy.Vault -> Queue SomeNode -> IO ()
-    go r q = {-# SCC go #-}
-        case ({-# SCC minView #-} Q.minView q) of
+    go r q =
+        case Q.minView q of
             Nothing         -> return ()
             Just (node, q)  -> do
                 children <- unwrapEvalP r (evaluateNode node)
@@ -79,14 +96,14 @@ evaluatePulses roots = wrapEvalP $ \r -> go r =<< insertNodes r roots Q.empty
 -- | Recalculate a given node and return all children nodes
 -- that need to evaluated subsequently.
 evaluateNode :: SomeNode -> EvalP [SomeNode]
-evaluateNode (P p) = {-# SCC evaluateNodeP #-} do
+evaluateNode (P p) = do
     Pulse{..} <- readRef p
     ma        <- _evalP
     writePulseP _keyP ma
     case ma of
         Nothing -> return []
         Just _  -> liftIO $ deRefWeaks _childrenP
-evaluateNode (L lw) = {-# SCC evaluateNodeL #-} do
+evaluateNode (L lw) = do
     time           <- askTime
     LatchWrite{..} <- readRef lw
     mlatch         <- liftIO $ deRefWeak _latchLW -- retrieve destination latch
@@ -99,7 +116,7 @@ evaluateNode (L lw) = {-# SCC evaluateNodeL #-} do
                 modify' latch $ \l ->
                     a `seq` l { _seenL = time, _valueL = a }
     return []
-evaluateNode (O o) = {-# SCC evaluateNodeO #-} do
+evaluateNode (O o) = do
     debug "evaluateNode O"
     Output{..} <- readRef o
     m          <- _evalO                    -- calculate output action
@@ -108,7 +125,7 @@ evaluateNode (O o) = {-# SCC evaluateNodeO #-} do
 
 -- | Insert nodes into the queue
 insertNodes :: RWS.Tuple BuildR (EvalPW, BuildW) Lazy.Vault -> [SomeNode] -> Queue SomeNode -> IO (Queue SomeNode)
-insertNodes (RWS.Tuple (time,_) _ _) = {-# SCC insertNodes #-} go
+insertNodes (RWS.Tuple (time,_) _ _) = go
     where
     go :: [SomeNode] -> Queue SomeNode -> IO (Queue SomeNode)
     go []              q = return q

@@ -37,13 +37,18 @@ module Reactive.Banana.Frameworks (
 
     ) where
 
-import           Control.Event.Handler
-import           Control.Monad
-import           Control.Monad.IO.Class
-import           Data.IORef
-import           Reactive.Banana.Combinators
+import Reactive.Banana.Combinators
+import Reactive.Banana.Event (Event(..))
+import Reactive.Banana.EventNetwork (EventNetwork, actuate, pause)
+import Reactive.Banana.Types
+
 import qualified Reactive.Banana.Internal.Combinators as Prim
-import           Reactive.Banana.Types
+import qualified Reactive.Banana.Moment as Moment (compile)
+
+import Control.Event.Handler
+import Control.Monad
+import Control.Monad.IO.Class
+import Data.IORef
 
 
 {-----------------------------------------------------------------------------
@@ -302,35 +307,7 @@ liftIOLater = MIO . Prim.liftIOLater
 -- into an 'EventNetwork'
 -- that you can 'actuate', 'pause' and so on.
 compile :: MomentIO () -> IO EventNetwork
-compile = fmap EN . Prim.compile . unMIO
-
-{-----------------------------------------------------------------------------
-    Running event networks
-------------------------------------------------------------------------------}
--- | Data type that represents a compiled event network.
--- It may be paused or already running.
-newtype EventNetwork = EN { unEN :: Prim.EventNetwork }
-
--- | Actuate an event network.
--- The inputs will register their event handlers, so that
--- the networks starts to produce outputs in response to input events.
-actuate :: EventNetwork -> IO ()
-actuate = Prim.actuate . unEN
-
--- | Pause an event network.
--- Immediately stop producing output.
--- (In a future version, it will also unregister all event handlers for inputs.)
--- Hence, the network stops responding to input events,
--- but it's state will be preserved.
---
--- You can resume the network with 'actuate'.
---
--- Note: You can stop a network even while it is processing events,
--- i.e. you can use 'pause' as an argument to 'reactimate'.
--- The network will /not/ stop immediately though, only after
--- the current event has been processed completely.
-pause :: EventNetwork -> IO ()
-pause   = Prim.pause . unEN
+compile = Moment.compile . unMIO
 
 {-----------------------------------------------------------------------------
     Utilities

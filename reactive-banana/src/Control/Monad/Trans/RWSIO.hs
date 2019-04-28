@@ -4,7 +4,7 @@ module Control.Monad.Trans.RWSIO (
     -- using an 'IORef'.
 
     -- * Documentation
-    RWSIOT(..), Tuple(..), rwsT, runRWSIOT, tell, ask, get, put,
+    RWSIOT(..), Tuple(..), rwsT, runRWSIOT, tell, ask, get, put, modify,
     ) where
 
 import Control.Applicative
@@ -92,6 +92,11 @@ get = R $ \(Tuple _ _ s') -> liftIO $ readIORef s'
 
 put :: MonadIO m => s -> RWSIOT r w s m ()
 put s = R $ \(Tuple _ _ s') -> liftIO $ writeIORef s' s
+
+modify :: MonadIO m => (s -> s) -> RWSIOT r w s m ()
+modify f = do
+  s <- get
+  put (f s)
 
 test :: RWSIOT String String () IO ()
 test = do

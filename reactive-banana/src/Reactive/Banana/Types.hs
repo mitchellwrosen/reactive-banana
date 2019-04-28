@@ -3,7 +3,7 @@
 ------------------------------------------------------------------------------}
 module Reactive.Banana.Types (
     -- | Primitive types.
-    Event(..), Behavior(..),
+    Behavior(..),
     Moment(..), MomentIO(..), MonadMoment(..),
     Future(..),
     ) where
@@ -20,49 +20,6 @@ import qualified Reactive.Banana.Internal.Combinators as Prim
 {-----------------------------------------------------------------------------
     Types
 ------------------------------------------------------------------------------}
-
-{-| @Event a@ represents a stream of events as they occur in time.
-Semantically, you can think of @Event a@ as an infinite list of values
-that are tagged with their corresponding time of occurrence,
-
-> type Event a = [(Time,a)]
-
-Each pair is called an /event occurrence/.
-Note that within a single event stream,
-no two event occurrences may happen at the same time.
-
-<<doc/frp-event.png>>
--}
-newtype Event a = E { unE :: Prim.Event a }
--- Invariant: The empty list `[]` never occurs as event value.
-
--- | The function 'fmap' applies a function @f@ to every value.
--- Semantically,
---
--- > fmap :: (a -> b) -> Event a -> Event b
--- > fmap f e = [(time, f a) | (time, a) <- e]
-instance Functor Event where
-    fmap f = E . Prim.mapE f . unE
-
--- | The combinator '<>' merges two event streams of the same type.
--- In case of simultaneous occurrences,
--- the events are combined with the underlying 'Semigroup' operation.
--- Semantically,
---
--- > (<>) :: Event a -> Event a -> Event a
--- > (<>) ex ey = unionWith (<>) ex ey
-instance Semigroup a => Semigroup (Event a) where
-    x <> y = E $ Prim.unionWith (<>) (unE x) (unE y)
-
--- | The combinator 'mempty' represents an event that never occurs.
--- It is a synonym,
---
--- > mempty :: Event a
--- > mempty = never
-instance Semigroup a => Monoid (Event a) where
-    mempty  = E $ Prim.never
-    mappend = (<>)
-
 
 {-| @Behavior a@ represents a value that varies in time.
 Semantically, you can think of it as a function

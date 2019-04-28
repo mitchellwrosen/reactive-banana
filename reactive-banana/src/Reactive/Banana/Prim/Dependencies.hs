@@ -1,20 +1,26 @@
 {-----------------------------------------------------------------------------
     reactive-banana
 ------------------------------------------------------------------------------}
-{-# LANGUAGE RecordWildCards, NamedFieldPuns #-}
+{-# LANGUAGE NamedFieldPuns, RecordWildCards #-}
 module Reactive.Banana.Prim.Dependencies (
     -- | Utilities for operating on node dependencies.
     addChild, changeParent, buildDependencies,
     ) where
 
+import Reactive.Banana.DependencyBuilder (DependencyBuilder)
+import Reactive.Banana.Lens (set, update)
+import Reactive.Banana.Prim.Types
+import Reactive.Banana.Prim.Util
+import Reactive.Banana.Pulse (Pulse, Pulse'(..), childrenP, levelP, parentsP)
+import Reactive.Banana.Ref (modify', put, readRef)
+import Reactive.Banana.SomeNode (SomeNode(..), mkWeakNodeValue)
+
+import qualified Reactive.Banana.Prim.Graph as Graph
+
 import Control.Monad
 import Data.Functor
 import Data.Monoid
 import System.Mem.Weak
-
-import qualified Reactive.Banana.Prim.Graph as Graph
-import           Reactive.Banana.Prim.Types
-import           Reactive.Banana.Prim.Util
 
 {-----------------------------------------------------------------------------
     Accumulate dependency information for nodes

@@ -4,18 +4,21 @@
 {-# LANGUAGE RecursiveDo, ScopedTypeVariables #-}
 module Reactive.Banana.Prim.Combinators where
 
+
+import Reactive.Banana.Build (Build)
+import Reactive.Banana.EvalO (Future)
+import Reactive.Banana.EvalP (EvalP, liftBuildP)
+import Reactive.Banana.Latch (Latch, readLatchP, readLatchFutureP)
+import Reactive.Banana.Prim.Plumbing (cachedLatch, changeParent, dependOn,
+                                      getValueL, keepAlive, neverP, newLatch,
+                                      newPulse)
+import Reactive.Banana.Pulse (Pulse, readPulseP)
+
+import qualified Reactive.Banana.Prim.Plumbing (pureL)
+
 import Control.Applicative
 import Control.Monad
 import Control.Monad.IO.Class
-
-import Reactive.Banana.Prim.Plumbing
-    ( neverP, newPulse, newLatch, cachedLatch
-    , dependOn, keepAlive, changeParent
-    , getValueL
-    , readPulseP, readLatchP, readLatchFutureP, liftBuildP,
-    )
-import qualified Reactive.Banana.Prim.Plumbing (pureL)
-import           Reactive.Banana.Prim.Types    (Latch, Future, Pulse, Build, EvalP)
 
 import Debug.Trace
 -- debug s = trace s
@@ -26,7 +29,7 @@ debug s = id
 ------------------------------------------------------------------------------}
 mapP :: (a -> b) -> Pulse a -> Build (Pulse b)
 mapP f p1 = do
-    p2 <- newPulse "mapP" $ {-# SCC mapP #-} fmap f <$> readPulseP p1
+    p2 <- newPulse "mapP" $ fmap f <$> readPulseP p1
     p2 `dependOn` p1
     return p2
 
@@ -43,14 +46,14 @@ tagFuture x p1 = do
 
 filterJustP :: Pulse (Maybe a) -> Build (Pulse a)
 filterJustP p1 = do
-    p2 <- newPulse "filterJustP" $ {-# SCC filterJustP #-} join <$> readPulseP p1
+    p2 <- newPulse "filterJustP" $ join <$> readPulseP p1
     p2 `dependOn` p1
     return p2
 
 unsafeMapIOP :: forall a b. (a -> IO b) -> Pulse a -> Build (Pulse b)
 unsafeMapIOP f p1 = do
         p2 <- newPulse "unsafeMapIOP" $
-            {-# SCC unsafeMapIOP #-} eval =<< readPulseP p1
+            eval =<< readPulseP p1
         p2 `dependOn` p1
         return p2
     where
@@ -61,7 +64,7 @@ unsafeMapIOP f p1 = do
 unionWithP :: forall a. (a -> a -> a) -> Pulse a -> Pulse a -> Build (Pulse a)
 unionWithP f px py = do
         p <- newPulse "unionWithP" $
-            {-# SCC unionWithP #-} eval <$> readPulseP px <*> readPulseP py
+            eval <$> readPulseP px <*> readPulseP py
         p `dependOn` px
         p `dependOn` py
         return p
@@ -76,7 +79,7 @@ unionWithP f px py = do
 applyP :: Latch (a -> b) -> Pulse a -> Build (Pulse b)
 applyP f x = do
     p <- newPulse "applyP" $
-        {-# SCC applyP #-} fmap <$> readLatchP f <*> readPulseP x
+        fmap <$> readLatchP f <*> readPulseP x
     p `dependOn` x
     return p
 
@@ -85,11 +88,11 @@ pureL = Reactive.Banana.Prim.Plumbing.pureL
 
 -- specialization of   mapL f = applyL (pureL f)
 mapL :: (a -> b) -> Latch a -> Latch b
-mapL f lx = cachedLatch $ {-# SCC mapL #-} f <$> getValueL lx
+mapL f lx = cachedLatch $ f <$> getValueL lx
 
 applyL :: Latch (a -> b) -> Latch a -> Latch b
 applyL lf lx = cachedLatch $
-    {-# SCC applyL #-} getValueL lf <*> getValueL lx
+    getValueL lf <*> getValueL lx
 
 accumL :: a -> Pulse (a -> a) -> Build (Latch a, Pulse a)
 accumL a p1 = do
@@ -115,7 +118,7 @@ switchL l pl = mdo
 
 executeP :: forall a b. Pulse (b -> Build a) -> b -> Build (Pulse a)
 executeP p1 b = do
-        p2 <- newPulse "executeP" $ {-# SCC executeP #-} eval =<< readPulseP p1
+        p2 <- newPulse "executeP" $ eval =<< readPulseP p1
         p2 `dependOn` p1
         return p2
     where
